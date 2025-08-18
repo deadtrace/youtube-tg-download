@@ -52,6 +52,7 @@ app.get("/downloads", (req, res) => {
           sizeBytes: stats.size,
           modified: stats.mtime.toISOString(),
           url: `${publicBaseUrl}/force-download/${encodeURIComponent(file)}`,
+          iosUrl: `${publicBaseUrl}/ios-save/${encodeURIComponent(file)}`,
         };
       })
       .sort((a, b) => new Date(b.modified) - new Date(a.modified)); // Сортировка по дате изменения
@@ -88,8 +89,15 @@ app.get("/downloads", (req, res) => {
             border-radius: 4px; 
             font-size: 14px;
             transition: background 0.3s;
+            margin-left: 10px;
           }
           .download-btn:hover { background: #0056b3; }
+          .ios-btn { 
+            background: #28a745; 
+          }
+          .ios-btn:hover { 
+            background: #218838; 
+          }
           .empty { text-align: center; color: #666; font-style: italic; }
         </style>
       </head>
@@ -114,6 +122,9 @@ app.get("/downloads", (req, res) => {
                     </div>
                   </div>
                   <a href="${file.url}" class="download-btn">📥 Скачать</a>
+                  <a href="${
+                    file.iosUrl
+                  }" class="download-btn ios-btn">📱 iOS</a>
                 </li>
               `
                 )
@@ -221,6 +232,61 @@ app.get("/force-download/:filename", (req, res) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("X-Download-Options", "noopen");
+
+  // Читаем и отправляем файл потоком
+  const fileStream = fs.createReadStream(filePath);
+  fileStream.pipe(res);
+});
+
+// Специальный маршрут для iOS - сохранение в фотопленку
+app.get("/ios-save/:filename", (req, res) => {
+  const filename = req.params.filename;
+  const filePath = path.join(downloadDir, filename);
+
+  // Проверяем, существует ли файл
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    return res.status(404).send("Файл не найден");
+  }
+
+  // Получаем размер файла
+  const stats = fs.statSync(filePath);
+  const fileSize = stats.size;
+
+  // Определяем правильный MIME-тип для iOS
+  const ext = path.extname(filename).toLowerCase();
+  let mimeType = "video/mp4"; // по умолчанию
+
+  const iosMimeTypes = {
+    ".mp4": "video/mp4",
+    ".mov": "video/quicktime",
+    ".m4v": "video/x-m4v",
+    ".3gp": "video/3gpp",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".wav": "audio/wav",
+  };
+
+  if (iosMimeTypes[ext]) {
+    mimeType = iosMimeTypes[ext];
+  }
+
+  // Специальные заголовки для iOS
+  res.setHeader("Content-Type", mimeType);
+  res.setHeader("Content-Length", fileSize);
+
+  // Заголовки для iOS фотопленки
+  res.setHeader("Accept-Ranges", "bytes");
+  res.setHeader("Content-Disposition", "inline");
+
+  // Заголовки для предотвращения кэширования
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+
+  // Дополнительные заголовки для iOS
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
 
   // Читаем и отправляем файл потоком
   const fileStream = fs.createReadStream(filePath);

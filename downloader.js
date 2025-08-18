@@ -219,10 +219,14 @@ export class VideoDownloader {
       const publicUrl = `${publicBaseUrl}/force-download/${encodeURIComponent(
         fileName
       )}`;
+      const iosUrl = `${publicBaseUrl}/ios-save/${encodeURIComponent(
+        fileName
+      )}`;
 
       await this.bot.editMessageText(
         `✅ Готово! Видео успешно скачано.\n\n` +
           `📥 <a href="${publicUrl}">Скачать файл</a>\n` +
+          `📱 <a href="${iosUrl}">Сохранить в фотопленку (iOS)</a>\n` +
           `📋 <a href="${publicBaseUrl}/downloads">Просмотреть все файлы</a>`,
         {
           chat_id: this.chatId,
