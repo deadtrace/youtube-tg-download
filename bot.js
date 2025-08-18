@@ -115,6 +115,8 @@ bot.on("message", async (msg) => {
     "-o",
     outputTemplate,
     "--newline",
+    "--progress-template",
+    "PROGRESS %(progress._percent_str)s %(progress._eta_str)s %(progress.speed)s %(progress.stage)s",
     "--print",
     "after_move:filepath",
     ...extraArgs,
@@ -133,7 +135,7 @@ bot.on("message", async (msg) => {
   const maybeEditProgress = async (percent, extraText) => {
     const now = Date.now();
     const rounded = Math.max(0, Math.min(100, Math.floor(percent)));
-    if (rounded === lastSentPercent && now - lastEditAt < 1500) return;
+    if (rounded === lastSentPercent && now - lastEditAt < 2000) return;
     lastSentPercent = rounded;
     lastEditAt = now;
     const textProgress = `Скачиваю: ${rounded}%${
@@ -158,6 +160,30 @@ bot.on("message", async (msg) => {
     }
   };
 
+  const parseProgressTemplate = (line) => {
+    // Формат: PROGRESS 42.3% 00:30 2.32MiB/s downloading
+    if (!line.startsWith("PROGRESS ")) return false;
+    const parts = line.split(/\s+/);
+    if (parts.length < 5) return false;
+    const percentStr = parts[1] || "0%";
+    const etaStr = parts[2] || "?";
+    const speedStr = parts[3] || "?";
+    const stage = parts[4] || "downloading";
+    const p = Number(percentStr.replace("%", ""));
+    if (Number.isNaN(p)) return false;
+    const stageRu =
+      stage === "downloading"
+        ? "скачивание"
+        : stage.includes("post")
+        ? "постобработка"
+        : stage.includes("merge")
+        ? "слияние"
+        : stage;
+    const extra = `${stageRu} · ${speedStr} · ETA ${etaStr}`;
+    maybeEditProgress(p, extra);
+    return true;
+  };
+
   child.stdout.on("data", async (chunk) => {
     bufferStdout += String(chunk);
     const lines = bufferStdout.split(/\r?\n/);
@@ -165,7 +191,9 @@ bot.on("message", async (msg) => {
     for (const raw of lines) {
       const line = raw.trim();
       if (!line) continue;
-      if (line.startsWith("[")) {
+      if (parseProgressTemplate(line)) {
+        // ok
+      } else if (line.startsWith("[")) {
         parseProgressLine(line);
       } else {
         // может быть напечатан финальный путь с --print
@@ -181,7 +209,7 @@ bot.on("message", async (msg) => {
     for (const raw of lines) {
       const line = raw.trim();
       if (!line) continue;
-      parseProgressLine(line);
+      if (!parseProgressTemplate(line)) parseProgressLine(line);
       lastErrorLines.push(line);
       if (lastErrorLines.length > 12) lastErrorLines.shift();
     }
