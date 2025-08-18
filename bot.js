@@ -114,6 +114,7 @@ bot.on("message", async (msg) => {
     "bv*[height<=1080]+ba/best",
     "-o",
     outputTemplate,
+    "--progress",
     "--newline",
     "--progress-template",
     "PROGRESS %(progress._percent_str)s %(progress._eta_str)s %(progress.speed)s %(progress.stage)s",
@@ -123,7 +124,10 @@ bot.on("message", async (msg) => {
     text,
   ];
 
-  const child = spawn(ytDlpPath, args, { shell: false });
+  const child = spawn(ytDlpPath, args, {
+    shell: false,
+    env: { ...process.env, PYTHONUNBUFFERED: "1", FORCE_COLOR: "0" },
+  });
 
   let finalFilePath = "";
   let bufferStdout = "";
@@ -131,6 +135,22 @@ bot.on("message", async (msg) => {
   const lastErrorLines = [];
   let lastSentPercent = -1;
   let lastEditAt = 0;
+  let spinnerTick = 0;
+  const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]; // fallback-индикатор
+  const keepAlive = setInterval(async () => {
+    // Если давно не обновляли и процента ещё нет — покрутим спиннер
+    if (lastSentPercent < 0 && Date.now() - lastEditAt > 4000) {
+      spinnerTick = (spinnerTick + 1) % spinnerFrames.length;
+      try {
+        await bot.editMessageText(
+          `Скачиваю... ${spinnerFrames[spinnerTick]} (подготовка/ожидание прогресса)`,
+          { chat_id: chatId, message_id: progressMsg.message_id }
+        );
+        lastEditAt = Date.now();
+      } catch {}
+    }
+  }, 4000);
+  const stripAnsi = (s) => s.replace(/\x1B\[[0-?]*[ -\/]*[@-~]/g, "");
 
   const maybeEditProgress = async (percent, extraText) => {
     const now = Date.now();
@@ -151,13 +171,18 @@ bot.on("message", async (msg) => {
 
   const parseProgressLine = (line) => {
     // пример: [download]  42.3% of 69.62MiB at 2.32MiB/s ETA 00:30
-    const m = line.match(/\[download\]\s+([0-9]+(?:\.[0-9]+)?)%/);
-    if (m) {
-      const speedMatch = line.match(/\s(\S+\/s)\sETA\s([0-9:]+)/);
-      const extra = speedMatch ? `${speedMatch[1]} · ETA ${speedMatch[2]}` : "";
-      const percentNum = Number(m[1]);
-      if (!Number.isNaN(percentNum)) maybeEditProgress(percentNum, extra);
-    }
+    const m = line.match(/([0-9]+(?:\.[0-9]+)?)%/);
+    if (!m) return false;
+    const percentNum = Number(m[1]);
+    if (Number.isNaN(percentNum)) return false;
+    const speedMatch = line.match(/(\S+\/s)/);
+    const etaMatch = line.match(/ETA\s([0-9:]+)/i);
+    const extraParts = [];
+    if (speedMatch) extraParts.push(speedMatch[1]);
+    if (etaMatch) extraParts.push(`ETA ${etaMatch[1]}`);
+    const extra = extraParts.join(" · ");
+    maybeEditProgress(percentNum, extra);
+    return true;
   };
 
   const parseProgressTemplate = (line) => {
@@ -189,7 +214,7 @@ bot.on("message", async (msg) => {
     const lines = bufferStdout.split(/\r?\n/);
     bufferStdout = lines.pop() || "";
     for (const raw of lines) {
-      const line = raw.trim();
+      const line = stripAnsi(raw.trim());
       if (!line) continue;
       if (parseProgressTemplate(line)) {
         // ok
@@ -207,7 +232,7 @@ bot.on("message", async (msg) => {
     const lines = bufferStderr.split(/\r?\n/);
     bufferStderr = lines.pop() || "";
     for (const raw of lines) {
-      const line = raw.trim();
+      const line = stripAnsi(raw.trim());
       if (!line) continue;
       if (!parseProgressTemplate(line)) parseProgressLine(line);
       lastErrorLines.push(line);
@@ -223,6 +248,7 @@ bot.on("message", async (msg) => {
   });
 
   child.on("close", async (code) => {
+    clearInterval(keepAlive);
     if (code !== 0) {
       const errTail = lastErrorLines.join("\n");
       const hint =
