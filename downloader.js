@@ -36,11 +36,9 @@ export class VideoDownloader {
     const outputTemplate = this.generateOutputTemplate();
     return [
       "-f",
-      "bv*[height<=720][ext=mp4][vcodec^=avc1]+ba[ext=m4a]/bv*[height<=720][ext=mp4]+ba[ext=m4a]/bv*[height<=720]+ba/best[ext=mp4]/best",
+      "bv*[height<=720][ext=mp4]+ba[ext=m4a]/bv*[height<=720]+ba/best[ext=mp4]/best",
       "--merge-output-format",
       "mp4",
-      "--postprocessor-args",
-      "ffmpeg:-c:v libx264 -c:a aac -movflags +faststart",
       "-o",
       outputTemplate,
       "--progress",
