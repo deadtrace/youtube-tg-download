@@ -9,6 +9,16 @@ import "dotenv/config";
 const token = process.env.BOT_TOKEN;
 const downloadDir = "./downloads";
 if (!fs.existsSync(downloadDir)) fs.mkdirSync(downloadDir);
+const ytDlpPath = process.env.YTDLP_PATH || "yt-dlp";
+const extraArgsRaw = (process.env.YTDLP_EXTRA_ARGS || "").trim();
+const parseExtraArgs = (raw) =>
+  raw
+    ? raw
+        .match(/(?:[^\s"]+|"[^"]*")+?/g)
+        .filter(Boolean)
+        .map((s) => s.replace(/^"|"$/g, ""))
+    : [];
+const extraArgs = parseExtraArgs(extraArgsRaw);
 
 if (!token) {
   console.error("Не задан BOT_TOKEN в переменных окружения.");
@@ -42,6 +52,33 @@ app.listen(serverPort, () => {
 
 // создаем бота
 const bot = new TelegramBot(token, { polling: true });
+
+// Проверка наличия yt-dlp и ffmpeg
+import { spawnSync } from "child_process";
+const checkBinary = (bin, args) => {
+  try {
+    const res = spawnSync(bin, args, { encoding: "utf8" });
+    if (res.error) return { ok: false, error: res.error.message };
+    if (res.status !== 0 && res.status !== null)
+      return { ok: false, error: res.stderr || res.stdout };
+    return { ok: true, stdout: res.stdout.trim() };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+};
+
+const ytCheck = checkBinary(ytDlpPath, ["--version"]);
+if (!ytCheck.ok) {
+  console.warn(
+    `yt-dlp не найден или не запускается по пути '${ytDlpPath}'. Ошибка: ${ytCheck.error}`
+  );
+}
+const ffmpegCheck = checkBinary("ffmpeg", ["-version"]);
+if (!ffmpegCheck.ok) {
+  console.warn(
+    `ffmpeg не найден или не запускается. Слияние видео/аудио может падать. Ошибка: ${ffmpegCheck.error}`
+  );
+}
 
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
@@ -80,14 +117,16 @@ bot.on("message", async (msg) => {
     "--newline",
     "--print",
     "after_move:filepath",
+    ...extraArgs,
     text,
   ];
 
-  const child = spawn("yt-dlp", args, { shell: true });
+  const child = spawn(ytDlpPath, args, { shell: false });
 
   let finalFilePath = "";
   let bufferStdout = "";
   let bufferStderr = "";
+  const lastErrorLines = [];
   let lastSentPercent = -1;
   let lastEditAt = 0;
 
@@ -143,6 +182,8 @@ bot.on("message", async (msg) => {
       const line = raw.trim();
       if (!line) continue;
       parseProgressLine(line);
+      lastErrorLines.push(line);
+      if (lastErrorLines.length > 12) lastErrorLines.shift();
     }
   });
 
@@ -155,10 +196,20 @@ bot.on("message", async (msg) => {
 
   child.on("close", async (code) => {
     if (code !== 0) {
-      await bot.editMessageText(`Ошибка при скачивании (код ${code}).`, {
-        chat_id: chatId,
-        message_id: progressMsg.message_id,
-      });
+      const errTail = lastErrorLines.join("\n");
+      const hint =
+        code === 2
+          ? "\nПодсказка: проверь ссылку (возможно приватное/недоступное видео), обнови yt-dlp и установи ffmpeg."
+          : "";
+      await bot.editMessageText(
+        `Ошибка при скачивании (код ${code}).${hint}\n${
+          errTail ? `\n\nЛог: ${errTail}` : ""
+        }`,
+        {
+          chat_id: chatId,
+          message_id: progressMsg.message_id,
+        }
+      );
       return;
     }
 
