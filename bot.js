@@ -2,14 +2,26 @@ import TelegramBot from "node-telegram-bot-api";
 import { exec } from "child_process";
 import fs from "fs";
 import path from "path";
+import "dotenv/config";
 
 // === НАСТРОЙКИ ===
-const token = "ТОКЕН_ТВОЕГО_БОТА";
+const token = process.env.BOT_TOKEN;
 const downloadDir = "./downloads";
 if (!fs.existsSync(downloadDir)) fs.mkdirSync(downloadDir);
 
+if (!token) {
+  console.error("Не задан BOT_TOKEN в переменных окружения.");
+  process.exit(1);
+}
+
 // белый список пользователей (только они могут скачивать видео)
-const allowedUsers = [];
+const allowedUsersEnv = process.env.ALLOWED_USERS || "";
+const allowedUsers = allowedUsersEnv
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean)
+  .map((s) => Number(s))
+  .filter((n) => !Number.isNaN(n));
 
 // создаем бота
 const bot = new TelegramBot(token, { polling: true });
