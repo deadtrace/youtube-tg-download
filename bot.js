@@ -101,7 +101,7 @@ bot.on("message", async (msg) => {
 
   const progressMsg = await bot.sendMessage(
     chatId,
-    "Скачиваю видео до 1080p... ⏳"
+    "Скачиваю видео до 720p... ⏳"
   );
 
   const outputTemplate = path.join(
@@ -111,7 +111,7 @@ bot.on("message", async (msg) => {
 
   const args = [
     "-f",
-    "bv*[height<=1080]+ba/best",
+    "bv*[height<=720]+ba/best",
     "-o",
     outputTemplate,
     "--progress",
