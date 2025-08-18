@@ -271,11 +271,159 @@ app.get("/ios-save/:filename", (req, res) => {
     mimeType = iosMimeTypes[ext];
   }
 
-  // Специальные заголовки для iOS
+  // Создаем HTML страницу для iOS с принудительным сохранением
+  const videoUrl = `${publicBaseUrl}/ios-video/${encodeURIComponent(filename)}`;
+
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Сохранение в фотопленку</title>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        body { 
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+          margin: 0; 
+          padding: 20px; 
+          background: #000; 
+          color: white; 
+          text-align: center;
+        }
+        .container { 
+          max-width: 500px; 
+          margin: 0 auto; 
+          padding: 20px;
+        }
+        .video-container {
+          margin: 20px 0;
+          border-radius: 12px;
+          overflow: hidden;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        video {
+          width: 100%;
+          height: auto;
+          display: block;
+        }
+        .save-btn {
+          background: #007AFF;
+          color: white;
+          border: none;
+          padding: 15px 30px;
+          border-radius: 25px;
+          font-size: 18px;
+          font-weight: 600;
+          margin: 20px 10px;
+          cursor: pointer;
+          transition: background 0.3s;
+        }
+        .save-btn:hover {
+          background: #0056CC;
+        }
+        .instructions {
+          background: rgba(255,255,255,0.1);
+          padding: 15px;
+          border-radius: 10px;
+          margin: 20px 0;
+          font-size: 14px;
+          line-height: 1.5;
+        }
+        .download-link {
+          display: inline-block;
+          background: #34C759;
+          color: white;
+          text-decoration: none;
+          padding: 12px 24px;
+          border-radius: 20px;
+          margin: 10px;
+          font-weight: 500;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h1>📱 Сохранение в фотопленку</h1>
+        
+        <div class="instructions">
+          <p><strong>Как сохранить видео:</strong></p>
+          <p>1. Нажмите на видео ниже</p>
+          <p>2. В открывшемся плеере нажмите кнопку "Поделиться" (квадрат со стрелкой)</p>
+          <p>3. Выберите "Сохранить видео"</p>
+        </div>
+
+        <div class="video-container">
+          <video controls autoplay muted>
+            <source src="${videoUrl}" type="${mimeType}">
+            Ваш браузер не поддерживает видео.
+          </video>
+        </div>
+
+        <button class="save-btn" onclick="openVideo()">🎬 Открыть видео</button>
+        
+        <br>
+        <a href="${videoUrl}" class="download-link" download>📥 Скачать напрямую</a>
+        
+        <div class="instructions">
+          <p><small>Если видео не воспроизводится, попробуйте открыть ссылку в Safari</small></p>
+        </div>
+      </div>
+
+      <script>
+        function openVideo() {
+          window.open('${videoUrl}', '_blank');
+        }
+        
+        // Автоматически открываем видео в новой вкладке на iOS
+        if (/iPad|iPhone|iPod/.test(navigator.userAgent)) {
+          setTimeout(() => {
+            openVideo();
+          }, 1000);
+        }
+      </script>
+    </body>
+    </html>
+  `;
+
+  res.send(html);
+});
+
+// Маршрут для прямого воспроизведения видео (для iOS)
+app.get("/ios-video/:filename", (req, res) => {
+  const filename = req.params.filename;
+  const filePath = path.join(downloadDir, filename);
+
+  // Проверяем, существует ли файл
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    return res.status(404).send("Файл не найден");
+  }
+
+  // Получаем размер файла
+  const stats = fs.statSync(filePath);
+  const fileSize = stats.size;
+
+  // Определяем правильный MIME-тип для iOS
+  const ext = path.extname(filename).toLowerCase();
+  let mimeType = "video/mp4"; // по умолчанию
+
+  const iosMimeTypes = {
+    ".mp4": "video/mp4",
+    ".mov": "video/quicktime",
+    ".m4v": "video/x-m4v",
+    ".3gp": "video/3gpp",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/aac",
+    ".wav": "audio/wav",
+  };
+
+  if (iosMimeTypes[ext]) {
+    mimeType = iosMimeTypes[ext];
+  }
+
+  // Заголовки для iOS воспроизведения
   res.setHeader("Content-Type", mimeType);
   res.setHeader("Content-Length", fileSize);
-
-  // Заголовки для iOS фотопленки
   res.setHeader("Accept-Ranges", "bytes");
   res.setHeader("Content-Disposition", "inline");
 
