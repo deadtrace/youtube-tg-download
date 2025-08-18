@@ -51,7 +51,7 @@ app.get("/downloads", (req, res) => {
           size: formatFileSize(stats.size),
           sizeBytes: stats.size,
           modified: stats.mtime.toISOString(),
-          url: `${publicBaseUrl}/downloads/${encodeURIComponent(file)}`,
+          url: `${publicBaseUrl}/force-download/${encodeURIComponent(file)}`,
         };
       })
       .sort((a, b) => new Date(b.modified) - new Date(a.modified)); // Сортировка по дате изменения
@@ -148,19 +148,79 @@ app.get("/downloads/:filename", (req, res) => {
     return res.status(404).send("Файл не найден");
   }
 
+  // Получаем размер файла
+  const stats = fs.statSync(filePath);
+  const fileSize = stats.size;
+
   // Устанавливаем заголовки для принудительного скачивания
   const mimeType = getMimeType(filename);
 
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-  res.setHeader("Content-Type", mimeType);
+  // Более агрессивные заголовки для принудительного скачивания
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`
+  );
+  res.setHeader("Content-Type", "application/octet-stream"); // Принудительно binary
+  res.setHeader("Content-Length", fileSize);
 
-  // Добавляем заголовки для кэширования
-  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  // Заголовки для предотвращения кэширования
+  res.setHeader(
+    "Cache-Control",
+    "no-cache, no-store, must-revalidate, private"
+  );
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
 
-  // Отправляем файл
-  res.sendFile(filePath);
+  // Дополнительные заголовки для принудительного скачивания
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+
+  // Читаем и отправляем файл потоком
+  const fileStream = fs.createReadStream(filePath);
+  fileStream.pipe(res);
+});
+
+// Альтернативный маршрут с параметром force для принудительного скачивания
+app.get("/force-download/:filename", (req, res) => {
+  const filename = req.params.filename;
+  const filePath = path.join(downloadDir, filename);
+
+  // Проверяем, существует ли файл
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    return res.status(404).send("Файл не найден");
+  }
+
+  // Получаем размер файла
+  const stats = fs.statSync(filePath);
+  const fileSize = stats.size;
+
+  // Максимально агрессивные заголовки для принудительного скачивания
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(
+      filename
+    )}`
+  );
+  res.setHeader("Content-Type", "application/force-download");
+  res.setHeader("Content-Length", fileSize);
+  res.setHeader("Content-Transfer-Encoding", "binary");
+
+  // Заголовки для предотвращения кэширования
+  res.setHeader(
+    "Cache-Control",
+    "no-cache, no-store, must-revalidate, private, max-age=0"
+  );
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "Thu, 01 Jan 1970 00:00:00 GMT");
+
+  // Дополнительные заголовки
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("X-Download-Options", "noopen");
+
+  // Читаем и отправляем файл потоком
+  const fileStream = fs.createReadStream(filePath);
+  fileStream.pipe(res);
 });
 
 // Запуск сервера

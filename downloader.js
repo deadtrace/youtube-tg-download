@@ -216,13 +216,14 @@ export class VideoDownloader {
       }
 
       const fileName = path.basename(this.finalFilePath);
-      const publicUrl = `${publicBaseUrl}/downloads/${encodeURIComponent(
+      const publicUrl = `${publicBaseUrl}/force-download/${encodeURIComponent(
         fileName
       )}`;
 
       await this.bot.editMessageText(
         `✅ Готово! Видео успешно скачано.\n\n` +
-          `📥 <a href="${publicUrl}">Скачать файл</a>\n`,
+          `📥 <a href="${publicUrl}">Скачать файл</a>\n` +
+          `📋 <a href="${publicBaseUrl}/downloads">Просмотреть все файлы</a>`,
         {
           chat_id: this.chatId,
           message_id: this.progressMsg.message_id,
