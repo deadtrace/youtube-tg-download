@@ -104,9 +104,16 @@ bot.on("message", async (msg) => {
     "Скачиваю видео до 720p... ⏳"
   );
 
+  const uniquePrefix = [
+    `u${userId}`,
+    `c${chatId}`,
+    Date.now(),
+    Math.random().toString(36).slice(2, 8),
+  ].join("-");
+
   const outputTemplate = path.join(
     downloadDir,
-    "%(title).100s - %(id)s.%(ext)s"
+    `${uniquePrefix} - %(title).100s - %(id)s.%(ext)s`
   );
 
   const args = [
