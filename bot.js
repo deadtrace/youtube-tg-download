@@ -2,6 +2,7 @@ import TelegramBot from "node-telegram-bot-api";
 import { exec } from "child_process";
 import fs from "fs";
 import path from "path";
+import express from "express";
 import "dotenv/config";
 
 // === НАСТРОЙКИ ===
@@ -22,6 +23,22 @@ const allowedUsers = allowedUsersEnv
   .filter(Boolean)
   .map((s) => Number(s))
   .filter((n) => !Number.isNaN(n));
+
+// HTTP-сервер для раздачи скачанных файлов
+const app = express();
+const serverPort = Number(process.env.SERVER_PORT || 3000);
+const publicBaseUrl = (
+  process.env.PUBLIC_BASE_URL || `http://localhost:${serverPort}`
+).replace(/\/$/, "");
+
+app.use("/downloads", express.static(downloadDir));
+
+app.listen(serverPort, () => {
+  console.log(`HTTP сервер запущен на ${publicBaseUrl}`);
+  console.log(
+    `Раздаю папку ${downloadDir} по адресу ${publicBaseUrl}/downloads/`
+  );
+});
 
 // создаем бота
 const bot = new TelegramBot(token, { polling: true });
@@ -47,32 +64,49 @@ bot.on("message", async (msg) => {
 
   bot.sendMessage(chatId, "Скачиваю видео до 1080p... ⏳");
 
-  const outputTemplate = path.join(downloadDir, "%(title).100s.%(ext)s");
-  const cmd = `yt-dlp -f "bv*[height<=1080]+ba/best" -o "${outputTemplate}" "${text}"`;
+  const outputTemplate = path.join(
+    downloadDir,
+    "%(title).100s - %(id)s.%(ext)s"
+  );
+  const cmd = `yt-dlp -f "bv*[height<=1080]+ba/best" -o "${outputTemplate}" --print after_move:filepath "${text}"`;
 
-  exec(cmd, async (error) => {
+  exec(cmd, async (error, stdout) => {
     if (error) {
       bot.sendMessage(chatId, `Ошибка при скачивании: ${error.message}`);
       return;
     }
 
     try {
-      // находим последний скачанный файл
-      const files = fs
-        .readdirSync(downloadDir)
-        .map((f) => ({
-          name: f,
-          time: fs.statSync(path.join(downloadDir, f)).mtime,
-        }))
-        .sort((a, b) => b.time - a.time);
+      // пробуем получить путь из stdout yt-dlp
+      const stdoutLines = String(stdout || "")
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+      let finalFilePath = stdoutLines[stdoutLines.length - 1];
 
-      const filePath = path.join(downloadDir, files[0].name);
+      if (!finalFilePath || !fs.existsSync(finalFilePath)) {
+        // fallback: находим последний скачанный файл (исключаем .part)
+        const files = fs
+          .readdirSync(downloadDir)
+          .filter((f) => !f.endsWith(".part"))
+          .map((f) => ({
+            name: f,
+            time: fs.statSync(path.join(downloadDir, f)).mtime,
+          }))
+          .sort((a, b) => b.time - a.time);
+        finalFilePath = files[0] ? path.join(downloadDir, files[0].name) : "";
+      }
 
-      // отправляем в Telegram как видео
-      await bot.sendVideo(chatId, filePath);
+      if (!finalFilePath) {
+        await bot.sendMessage(chatId, "Не удалось найти сохранённый файл.");
+        return;
+      }
 
-      // удаляем после отправки
-      fs.unlinkSync(filePath);
+      const fileName = path.basename(finalFilePath);
+      const publicUrl = `${publicBaseUrl}/downloads/${encodeURIComponent(
+        fileName
+      )}`;
+      await bot.sendMessage(chatId, `Готово! Ссылка на видео: ${publicUrl}`);
     } catch (e) {
       bot.sendMessage(chatId, `Ошибка при отправке: ${e.message}`);
     }
