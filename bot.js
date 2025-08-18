@@ -1,5 +1,5 @@
 import TelegramBot from "node-telegram-bot-api";
-import { exec } from "child_process";
+import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
 import express from "express";
@@ -62,30 +62,109 @@ bot.on("message", async (msg) => {
     return;
   }
 
-  bot.sendMessage(chatId, "Скачиваю видео до 1080p... ⏳");
+  const progressMsg = await bot.sendMessage(
+    chatId,
+    "Скачиваю видео до 1080p... ⏳"
+  );
 
   const outputTemplate = path.join(
     downloadDir,
     "%(title).100s - %(id)s.%(ext)s"
   );
-  const cmd = `yt-dlp -f "bv*[height<=1080]+ba/best" -o "${outputTemplate}" --print after_move:filepath "${text}"`;
 
-  exec(cmd, async (error, stdout) => {
-    if (error) {
-      bot.sendMessage(chatId, `Ошибка при скачивании: ${error.message}`);
+  const args = [
+    "-f",
+    "bv*[height<=1080]+ba/best",
+    "-o",
+    outputTemplate,
+    "--newline",
+    "--print",
+    "after_move:filepath",
+    text,
+  ];
+
+  const child = spawn("yt-dlp", args, { shell: true });
+
+  let finalFilePath = "";
+  let bufferStdout = "";
+  let bufferStderr = "";
+  let lastSentPercent = -1;
+  let lastEditAt = 0;
+
+  const maybeEditProgress = async (percent, extraText) => {
+    const now = Date.now();
+    const rounded = Math.max(0, Math.min(100, Math.floor(percent)));
+    if (rounded === lastSentPercent && now - lastEditAt < 1500) return;
+    lastSentPercent = rounded;
+    lastEditAt = now;
+    const textProgress = `Скачиваю: ${rounded}%${
+      extraText ? ` | ${extraText}` : ""
+    }`;
+    try {
+      await bot.editMessageText(textProgress, {
+        chat_id: chatId,
+        message_id: progressMsg.message_id,
+      });
+    } catch {}
+  };
+
+  const parseProgressLine = (line) => {
+    // пример: [download]  42.3% of 69.62MiB at 2.32MiB/s ETA 00:30
+    const m = line.match(/\[download\]\s+([0-9]+(?:\.[0-9]+)?)%/);
+    if (m) {
+      const speedMatch = line.match(/\s(\S+\/s)\sETA\s([0-9:]+)/);
+      const extra = speedMatch ? `${speedMatch[1]} · ETA ${speedMatch[2]}` : "";
+      const percentNum = Number(m[1]);
+      if (!Number.isNaN(percentNum)) maybeEditProgress(percentNum, extra);
+    }
+  };
+
+  child.stdout.on("data", async (chunk) => {
+    bufferStdout += String(chunk);
+    const lines = bufferStdout.split(/\r?\n/);
+    bufferStdout = lines.pop() || "";
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      if (line.startsWith("[")) {
+        parseProgressLine(line);
+      } else {
+        // может быть напечатан финальный путь с --print
+        if (!finalFilePath && fs.existsSync(line)) finalFilePath = line;
+      }
+    }
+  });
+
+  child.stderr.on("data", (chunk) => {
+    bufferStderr += String(chunk);
+    const lines = bufferStderr.split(/\r?\n/);
+    bufferStderr = lines.pop() || "";
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      parseProgressLine(line);
+    }
+  });
+
+  child.on("error", async (err) => {
+    await bot.editMessageText(`Ошибка при запуске загрузки: ${err.message}`, {
+      chat_id: chatId,
+      message_id: progressMsg.message_id,
+    });
+  });
+
+  child.on("close", async (code) => {
+    if (code !== 0) {
+      await bot.editMessageText(`Ошибка при скачивании (код ${code}).`, {
+        chat_id: chatId,
+        message_id: progressMsg.message_id,
+      });
       return;
     }
 
     try {
-      // пробуем получить путь из stdout yt-dlp
-      const stdoutLines = String(stdout || "")
-        .split(/\r?\n/)
-        .map((l) => l.trim())
-        .filter(Boolean);
-      let finalFilePath = stdoutLines[stdoutLines.length - 1];
-
+      // если путь не был получен из stdout, ищем последний файл
       if (!finalFilePath || !fs.existsSync(finalFilePath)) {
-        // fallback: находим последний скачанный файл (исключаем .part)
         const files = fs
           .readdirSync(downloadDir)
           .filter((f) => !f.endsWith(".part"))
@@ -98,7 +177,10 @@ bot.on("message", async (msg) => {
       }
 
       if (!finalFilePath) {
-        await bot.sendMessage(chatId, "Не удалось найти сохранённый файл.");
+        await bot.editMessageText("Не удалось найти сохранённый файл.", {
+          chat_id: chatId,
+          message_id: progressMsg.message_id,
+        });
         return;
       }
 
@@ -106,9 +188,17 @@ bot.on("message", async (msg) => {
       const publicUrl = `${publicBaseUrl}/downloads/${encodeURIComponent(
         fileName
       )}`;
-      await bot.sendMessage(chatId, `Готово! Ссылка на видео: ${publicUrl}`);
+
+      await bot.editMessageText(`Готово! Ссылка на видео: ${publicUrl}`, {
+        chat_id: chatId,
+        message_id: progressMsg.message_id,
+        disable_web_page_preview: true,
+      });
     } catch (e) {
-      bot.sendMessage(chatId, `Ошибка при отправке: ${e.message}`);
+      await bot.editMessageText(`Ошибка при отправке: ${e.message}`, {
+        chat_id: chatId,
+        message_id: progressMsg.message_id,
+      });
     }
   });
 });
