@@ -220,11 +220,16 @@ export class VideoDownloader {
         fileName
       )}`;
 
-      await this.bot.editMessageText(`Готово! Ссылка на видео: ${publicUrl}`, {
-        chat_id: this.chatId,
-        message_id: this.progressMsg.message_id,
-        disable_web_page_preview: true,
-      });
+      await this.bot.editMessageText(
+        `✅ Готово! Видео успешно скачано.\n\n` +
+          `📥 <a href="${publicUrl}">Скачать файл</a>\n`,
+        {
+          chat_id: this.chatId,
+          message_id: this.progressMsg.message_id,
+          disable_web_page_preview: true,
+          parse_mode: "HTML",
+        }
+      );
     } catch (e) {
       await this.bot.editMessageText(`Ошибка при отправке: ${e.message}`, {
         chat_id: this.chatId,
