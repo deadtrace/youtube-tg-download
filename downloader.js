@@ -36,7 +36,9 @@ export class VideoDownloader {
     const outputTemplate = this.generateOutputTemplate();
     return [
       "-f",
-      "bv*[height<=720]+ba/best",
+      "bv*[height<=720][ext=mp4]+ba[ext=m4a]/bv*[height<=720]+ba/best[ext=mp4]/best",
+      "--merge-output-format",
+      "mp4",
       "-o",
       outputTemplate,
       "--progress",
