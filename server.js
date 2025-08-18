@@ -155,10 +155,13 @@ app.get("/downloads/:filename", (req, res) => {
   // Устанавливаем заголовки для принудительного скачивания
   const mimeType = getMimeType(filename);
 
+  // Безопасное имя файла для заголовков
+  const safeFilename = filename.replace(/[^\w\-\.]/g, "_");
+
   // Более агрессивные заголовки для принудительного скачивания
   res.setHeader(
     "Content-Disposition",
-    `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`
+    `attachment; filename="${safeFilename}"`
   );
   res.setHeader("Content-Type", "application/octet-stream"); // Принудительно binary
   res.setHeader("Content-Length", fileSize);
@@ -194,14 +197,15 @@ app.get("/force-download/:filename", (req, res) => {
   const stats = fs.statSync(filePath);
   const fileSize = stats.size;
 
+  // Безопасное имя файла для заголовков (убираем недопустимые символы)
+  const safeFilename = filename.replace(/[^\w\-\.]/g, "_");
+
   // Максимально агрессивные заголовки для принудительного скачивания
   res.setHeader(
     "Content-Disposition",
-    `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(
-      filename
-    )}`
+    `attachment; filename="${safeFilename}"`
   );
-  res.setHeader("Content-Type", "application/force-download");
+  res.setHeader("Content-Type", "application/octet-stream");
   res.setHeader("Content-Length", fileSize);
   res.setHeader("Content-Transfer-Encoding", "binary");
 
