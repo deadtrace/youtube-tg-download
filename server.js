@@ -138,36 +138,30 @@ app.get("/downloads", (req, res) => {
   }
 });
 
-// Middleware для автоматического скачивания файлов
-app.use("/downloads", (req, res, next) => {
-  // Получаем путь к файлу
-  const filePath = path.join(downloadDir, req.path);
+// Маршрут для автоматического скачивания файлов
+app.get("/downloads/:filename", (req, res) => {
+  const filename = req.params.filename;
+  const filePath = path.join(downloadDir, filename);
 
   // Проверяем, существует ли файл
-  if (req.path && req.path !== "/") {
-    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-      // Устанавливаем заголовки для принудительного скачивания
-      const fileName = path.basename(filePath);
-      const mimeType = getMimeType(fileName);
-
-      res.setHeader(
-        "Content-Disposition",
-        `attachment; filename="${fileName}"`
-      );
-      res.setHeader("Content-Type", mimeType);
-
-      // Добавляем заголовки для кэширования
-      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
-      res.setHeader("Pragma", "no-cache");
-      res.setHeader("Expires", "0");
-    }
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    return res.status(404).send("Файл не найден");
   }
 
-  next();
-});
+  // Устанавливаем заголовки для принудительного скачивания
+  const mimeType = getMimeType(filename);
 
-// Настройка статических файлов
-app.use("/downloads", express.static(downloadDir));
+  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Type", mimeType);
+
+  // Добавляем заголовки для кэширования
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+
+  // Отправляем файл
+  res.sendFile(filePath);
+});
 
 // Запуск сервера
 export const startServer = () => {
