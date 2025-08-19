@@ -4,6 +4,7 @@ import { isUserAllowed, isValidYouTubeUrl, isCommand } from "./utils.js";
 import { startServer } from "./server.js";
 import { VideoDownloader } from "./downloader.js";
 import { checkDependencies } from "./health-check.js";
+import { cleanupScheduler } from "./scheduler.js";
 
 // Создаем бота
 const bot = new TelegramBot(token, { polling: true });
@@ -13,6 +14,50 @@ checkDependencies();
 
 // Запускаем HTTP сервер
 startServer();
+
+// Запускаем планировщик очистки файлов
+cleanupScheduler.start();
+
+// Обработка команд
+async function handleCommands(command, chatId, userId) {
+  switch (command) {
+    case "/cleanup":
+      await bot.sendMessage(
+        chatId,
+        "🧹 Запускаю ручную очистку старых файлов..."
+      );
+      await cleanupScheduler.cleanupOldFiles();
+      await bot.sendMessage(chatId, "✅ Ручная очистка завершена!");
+      break;
+
+    case "/stats":
+      const stats = cleanupScheduler.getFileStats();
+      const totalSizeMB = (stats.totalSize / (1024 * 1024)).toFixed(1);
+      const message =
+        `📊 Статистика файлов:\n\n` +
+        `📁 Всего файлов: ${stats.count}\n` +
+        `💾 Общий размер: ${totalSizeMB} МБ\n` +
+        `🗑️ Старых файлов (>${process.env.FILE_MAX_AGE_DAYS || 7}д): ${
+          stats.oldFiles
+        }`;
+      await bot.sendMessage(chatId, message);
+      break;
+
+    case "/help":
+      const helpText =
+        `🤖 Доступные команды:\n\n` +
+        `📥 Отправь ссылку на YouTube для скачивания\n` +
+        `/cleanup - Ручная очистка старых файлов\n` +
+        `/stats - Статистика файлов\n` +
+        `/help - Показать это сообщение`;
+      await bot.sendMessage(chatId, helpText);
+      break;
+
+    default:
+      // Игнорируем неизвестные команды
+      break;
+  }
+}
 
 // Обработчик сообщений
 bot.on("message", async (msg) => {
@@ -26,8 +71,11 @@ bot.on("message", async (msg) => {
     return;
   }
 
-  // Игнорируем команды
-  if (isCommand(text)) return;
+  // Обработка команд
+  if (isCommand(text)) {
+    await handleCommands(text, chatId, userId);
+    return;
+  }
 
   // Проверка валидности YouTube ссылки
   if (!isValidYouTubeUrl(text)) {
@@ -41,3 +89,16 @@ bot.on("message", async (msg) => {
 });
 
 console.log("🤖 Telegram бот запущен и готов к работе!");
+
+// Обработка сигналов завершения
+process.on("SIGINT", () => {
+  console.log("\n🛑 Получен сигнал SIGINT, останавливаю бота...");
+  cleanupScheduler.stop();
+  process.exit(0);
+});
+
+process.on("SIGTERM", () => {
+  console.log("\n🛑 Получен сигнал SIGTERM, останавливаю бота...");
+  cleanupScheduler.stop();
+  process.exit(0);
+});

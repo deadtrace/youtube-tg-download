@@ -14,6 +14,10 @@ const publicBaseUrl = (
 // Максимальный размер файла для отправки в Telegram (в МБ)
 const maxTelegramFileSizeMB = 50;
 
+// Настройки планировщика очистки
+const cleanupIntervalHours = Number(process.env.CLEANUP_INTERVAL_HOURS || 24);
+const fileMaxAgeDays = Number(process.env.FILE_MAX_AGE_DAYS || 7);
+
 // Создаем папку для загрузок если её нет
 if (!fs.existsSync(downloadDir)) {
   fs.mkdirSync(downloadDir);
@@ -54,4 +58,6 @@ export {
   serverPort,
   publicBaseUrl,
   maxTelegramFileSizeMB,
+  cleanupIntervalHours,
+  fileMaxAgeDays,
 };
