@@ -6,12 +6,13 @@ import { VideoDownloader } from "./downloader.js";
 import { AudioDownloader } from "./audio-downloader.js";
 import { checkDependencies } from "./health-check.js";
 import { cleanupScheduler } from "./scheduler.js";
+import { loadUserModes, setUserMode, getUserMode } from "./user-modes.js";
 
 // Создаем бота
 const bot = new TelegramBot(token, { polling: true });
 
-// Хранилище для отслеживания режима скачивания пользователей
-const userDownloadMode = new Map();
+// Загружаем сохраненные режимы пользователей
+const userDownloadMode = loadUserModes();
 
 // Проверяем зависимости при запуске
 checkDependencies();
@@ -26,7 +27,7 @@ cleanupScheduler.start();
 async function handleCommands(command, chatId, userId) {
   switch (command) {
     case "/audio":
-      userDownloadMode.set(userId, "audio");
+      setUserMode(userDownloadMode, userId, "audio");
       await bot.sendMessage(
         chatId,
         "🎵 Режим скачивания аудио включен!\n\n📥 Отправь ссылку на YouTube для скачивания только аудио.\n\n💡 Используй /mode для проверки текущего режима."
@@ -34,7 +35,7 @@ async function handleCommands(command, chatId, userId) {
       break;
 
     case "/video":
-      userDownloadMode.set(userId, "video");
+      setUserMode(userDownloadMode, userId, "video");
       await bot.sendMessage(
         chatId,
         "🎥 Режим скачивания видео включен!\n\n📥 Отправь ссылку на YouTube для скачивания видео.\n\n💡 Используй /mode для проверки текущего режима."
@@ -64,7 +65,7 @@ async function handleCommands(command, chatId, userId) {
       break;
 
     case "/mode":
-      const currentMode = userDownloadMode.get(userId) || "video";
+      const currentMode = getUserMode(userDownloadMode, userId);
       const modeEmoji = currentMode === "audio" ? "🎵" : "🎥";
       const modeText = currentMode === "audio" ? "аудио" : "видео";
       const modeMessage =
@@ -117,7 +118,7 @@ bot.on("message", async (msg) => {
   }
 
   // Определяем режим скачивания
-  const downloadMode = userDownloadMode.get(userId) || "video";
+  const downloadMode = getUserMode(userDownloadMode, userId);
 
   // Создаем экземпляр загрузчика и начинаем скачивание
   if (downloadMode === "audio") {

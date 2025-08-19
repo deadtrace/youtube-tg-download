@@ -1,4 +1,4 @@
 .env
 node_modules/
 downloads/
-node_modules/
+user-modes.json
