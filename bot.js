@@ -3,11 +3,15 @@ import { token, allowedUsers } from "./config.js";
 import { isUserAllowed, isValidYouTubeUrl, isCommand } from "./utils.js";
 import { startServer } from "./server.js";
 import { VideoDownloader } from "./downloader.js";
+import { AudioDownloader } from "./audio-downloader.js";
 import { checkDependencies } from "./health-check.js";
 import { cleanupScheduler } from "./scheduler.js";
 
 // Создаем бота
 const bot = new TelegramBot(token, { polling: true });
+
+// Хранилище для отслеживания режима скачивания пользователей
+const userDownloadMode = new Map();
 
 // Проверяем зависимости при запуске
 checkDependencies();
@@ -21,6 +25,22 @@ cleanupScheduler.start();
 // Обработка команд
 async function handleCommands(command, chatId, userId) {
   switch (command) {
+    case "/audio":
+      userDownloadMode.set(userId, "audio");
+      await bot.sendMessage(
+        chatId,
+        "🎵 Режим скачивания аудио включен! Теперь отправь ссылку на YouTube для скачивания только аудио."
+      );
+      break;
+
+    case "/video":
+      userDownloadMode.set(userId, "video");
+      await bot.sendMessage(
+        chatId,
+        "🎥 Режим скачивания видео включен! Теперь отправь ссылку на YouTube для скачивания видео."
+      );
+      break;
+
     case "/cleanup":
       await bot.sendMessage(
         chatId,
@@ -47,6 +67,8 @@ async function handleCommands(command, chatId, userId) {
       const helpText =
         `🤖 Доступные команды:\n\n` +
         `📥 Отправь ссылку на YouTube для скачивания\n` +
+        `/audio - Скачать только аудио\n` +
+        `/video - Скачать видео (по умолчанию)\n` +
         `/cleanup - Ручная очистка старых файлов\n` +
         `/stats - Статистика файлов\n` +
         `/help - Показать это сообщение`;
@@ -83,9 +105,17 @@ bot.on("message", async (msg) => {
     return;
   }
 
+  // Определяем режим скачивания
+  const downloadMode = userDownloadMode.get(userId) || "video";
+
   // Создаем экземпляр загрузчика и начинаем скачивание
-  const downloader = new VideoDownloader(bot, chatId, userId);
-  await downloader.download(text);
+  if (downloadMode === "audio") {
+    const downloader = new AudioDownloader(bot, chatId, userId);
+    await downloader.download(text);
+  } else {
+    const downloader = new VideoDownloader(bot, chatId, userId);
+    await downloader.download(text);
+  }
 });
 
 console.log("🤖 Telegram бот запущен и готов к работе!");
