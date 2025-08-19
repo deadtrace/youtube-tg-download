@@ -1,4 +1,5 @@
 import { spawnSync } from "child_process";
+import fs from "fs";
 
 // Проверка наличия бинарных файлов
 export const checkBinary = (bin, args) => {
@@ -39,4 +40,19 @@ export const isValidYouTubeUrl = (text) => {
 // Проверка является ли сообщение командой
 export const isCommand = (text) => {
   return text && text.startsWith("/");
+};
+
+// Получение размера файла в байтах
+export const getFileSize = (filePath) => {
+  try {
+    const stats = fs.statSync(filePath);
+    return stats.size;
+  } catch (error) {
+    return 0;
+  }
+};
+
+// Конвертация байтов в мегабайты
+export const bytesToMB = (bytes) => {
+  return bytes / (1024 * 1024);
 };

@@ -1,8 +1,19 @@
 import { spawn } from "child_process";
 import fs from "fs";
 import path from "path";
-import { ytDlpPath, extraArgs, downloadDir, publicBaseUrl } from "./config.js";
-import { stripAnsi, generateUniquePrefix } from "./utils.js";
+import {
+  ytDlpPath,
+  extraArgs,
+  downloadDir,
+  publicBaseUrl,
+  maxTelegramFileSizeMB,
+} from "./config.js";
+import {
+  stripAnsi,
+  generateUniquePrefix,
+  getFileSize,
+  bytesToMB,
+} from "./utils.js";
 
 // Класс для управления процессом скачивания
 export class VideoDownloader {
@@ -219,26 +230,83 @@ export class VideoDownloader {
         return;
       }
 
+      // Проверяем размер файла
+      const fileSizeBytes = getFileSize(this.finalFilePath);
+      const fileSizeMB = bytesToMB(fileSizeBytes);
       const fileName = path.basename(this.finalFilePath);
-      const downloadUrl = `${publicBaseUrl}/force-download/${encodeURIComponent(
-        fileName
-      )}`;
-      const viewUrl = `${publicBaseUrl}/downloads/${encodeURIComponent(
-        fileName
-      )}`;
 
-      await this.bot.editMessageText(
-        `✅ Готово! Видео успешно скачано.\n\n` +
-          `👁️ <a href="${viewUrl}">Просмотреть видео</a>\n` +
-          `📥 <a href="${downloadUrl}">Скачать файл</a>\n` +
-          `📋 <a href="${publicBaseUrl}/downloads">Все файлы</a>`,
-        {
-          chat_id: this.chatId,
-          message_id: this.progressMsg.message_id,
-          disable_web_page_preview: true,
-          parse_mode: "HTML",
+      // Если файл меньше 50Мб, пытаемся отправить его в Telegram
+      if (fileSizeMB <= maxTelegramFileSizeMB) {
+        await this.bot.editMessageText(
+          `✅ Готово! Видео скачано (${fileSizeMB.toFixed(
+            1
+          )}Мб). Отправляю в чат...`,
+          {
+            chat_id: this.chatId,
+            message_id: this.progressMsg.message_id,
+          }
+        );
+
+        const sendSuccess = await this.sendVideoToTelegram(this.finalFilePath);
+
+        if (sendSuccess) {
+          // Успешно отправили, удаляем файл
+          await this.deleteFile(this.finalFilePath);
+          await this.bot.editMessageText(
+            `✅ Видео успешно отправлено и удалено с сервера!`,
+            {
+              chat_id: this.chatId,
+              message_id: this.progressMsg.message_id,
+            }
+          );
+        } else {
+          // Не удалось отправить, используем прошлый флоу
+          const downloadUrl = `${publicBaseUrl}/force-download/${encodeURIComponent(
+            fileName
+          )}`;
+          const viewUrl = `${publicBaseUrl}/downloads/${encodeURIComponent(
+            fileName
+          )}`;
+
+          await this.bot.editMessageText(
+            `✅ Готово! Видео скачано (${fileSizeMB.toFixed(
+              1
+            )}Мб). Не удалось отправить в чат.\n\n` +
+              `👁️ <a href="${viewUrl}">Просмотреть видео</a>\n` +
+              `📥 <a href="${downloadUrl}">Скачать файл</a>\n` +
+              `📋 <a href="${publicBaseUrl}/downloads">Все файлы</a>`,
+            {
+              chat_id: this.chatId,
+              message_id: this.progressMsg.message_id,
+              disable_web_page_preview: true,
+              parse_mode: "HTML",
+            }
+          );
         }
-      );
+      } else {
+        // Файл больше 50Мб, используем прошлый флоу
+        const downloadUrl = `${publicBaseUrl}/force-download/${encodeURIComponent(
+          fileName
+        )}`;
+        const viewUrl = `${publicBaseUrl}/downloads/${encodeURIComponent(
+          fileName
+        )}`;
+
+        await this.bot.editMessageText(
+          `✅ Готово! Видео скачано (${fileSizeMB.toFixed(
+            1
+          )}Мб). Файл слишком большой для отправки в чат.\n\n` +
+            `👁️ <a href="${viewUrl}">Просмотреть видео</a>\n` +
+            `📥 <a href="${downloadUrl}">Скачать файл</a>\n` +
+            `📋 <a href="${publicBaseUrl}/downloads">Все файлы</a>`,
+          {
+            chat_id: this.chatId,
+            message_id: this.progressMsg.message_id,
+            disable_web_page_preview: true,
+            parse_mode: "HTML",
+          }
+        );
+      }
     } catch (e) {
       await this.bot.editMessageText(`Ошибка при отправке: ${e.message}`, {
         chat_id: this.chatId,
@@ -256,6 +324,36 @@ export class VideoDownloader {
         message_id: this.progressMsg.message_id,
       }
     );
+  }
+
+  // Отправка видео в Telegram
+  async sendVideoToTelegram(filePath) {
+    try {
+      const fileName = path.basename(filePath);
+      await this.bot.sendVideo(this.chatId, filePath, {
+        caption: `📹 ${fileName}`,
+        supports_streaming: true,
+      });
+      return true;
+    } catch (error) {
+      console.error("Ошибка при отправке видео в Telegram:", error.message);
+      return false;
+    }
+  }
+
+  // Удаление файла с сервера
+  async deleteFile(filePath) {
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`Файл удален: ${filePath}`);
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error("Ошибка при удалении файла:", error.message);
+      return false;
+    }
   }
 
   // Запуск процесса скачивания

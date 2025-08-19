@@ -11,6 +11,9 @@ const publicBaseUrl = (
   process.env.PUBLIC_BASE_URL || `http://localhost:${serverPort}`
 ).replace(/\/$/, "");
 
+// Максимальный размер файла для отправки в Telegram (в МБ)
+const maxTelegramFileSizeMB = 50;
+
 // Создаем папку для загрузок если её нет
 if (!fs.existsSync(downloadDir)) {
   fs.mkdirSync(downloadDir);
@@ -50,4 +53,5 @@ export {
   allowedUsers,
   serverPort,
   publicBaseUrl,
+  maxTelegramFileSizeMB,
 };
