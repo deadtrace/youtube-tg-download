@@ -54,18 +54,12 @@ export class VideoDownloader {
       "ffmpeg:-c:v copy -c:a copy -movflags +faststart",
       "--user-agent",
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "--cookies-from-browser",
-      "chrome",
       "--no-check-certificates",
       "--prefer-insecure",
       "--force-ipv4",
       "--retries",
       "3",
       "--fragment-retries",
-      "3",
-      "--downloader-retries",
-      "3",
-      "--file-access-retries",
       "3",
       "--ignore-errors",
       "--no-abort-on-error",
@@ -205,17 +199,10 @@ export class VideoDownloader {
 
     if (code !== 0) {
       const errTail = this.lastErrorLines.join("\n");
-      let hint = "";
-      
-      if (code === 2) {
-        hint = "\nПодсказка: проверь ссылку (возможно приватное/недоступное видео), обнови yt-dlp и установи ffmpeg.";
-      } else if (errTail.includes("HTTP Error 403")) {
-        hint = "\nПодсказка: YouTube заблокировал доступ. Попробуйте:\n1. Обновить yt-dlp: pip install -U yt-dlp\n2. Использовать VPN\n3. Попробовать позже";
-      } else if (errTail.includes("Requested format is not available")) {
-        hint = "\nПодсказка: запрошенный формат недоступен. Попробуйте другое видео или обновите yt-dlp.";
-      } else if (errTail.includes("fragment 1 not found")) {
-        hint = "\nПодсказка: проблемы с фрагментами видео. Попробуйте обновить yt-dlp или использовать другое видео.";
-      }
+      const hint =
+        code === 2
+          ? "\nПодсказка: проверь ссылку (возможно приватное/недоступное видео), обнови yt-dlp и установи ffmpeg."
+          : "";
 
       await this.bot.editMessageText(
         `Ошибка при скачивании (код ${code}).${hint}\n${
